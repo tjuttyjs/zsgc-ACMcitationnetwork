@@ -13,7 +13,7 @@ class Neo4jConnection {
         process.env.NEO4J_URI || 'bolt://localhost:7687',
         neo4j.auth.basic(
           process.env.NEO4J_USER || 'neo4j',
-          process.env.NEO4J_PASSWORD || '你的密码'
+          process.env.NEO4J_PASSWORD || 'neo4j'
         ),
         {
           maxConnectionLifetime: 3 * 60 * 60 * 1000,

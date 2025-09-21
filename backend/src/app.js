@@ -31,6 +31,8 @@ const authorRoutes = require('./routes/authorRoutes');
 const venueRoutes = require('./routes/venueRoutes');
 const citationRoutes = require('./routes/citationRoutes');
 const statisticsRoutes = require('./routes/statisticsRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const visualizationRoutes = require('./routes/visualizationRoutes');
 
 // 5. 最后注册路由
 app.use('/api/papers', paperRoutes);
@@ -38,6 +40,8 @@ app.use('/api/authors', authorRoutes);
 app.use('/api/venues', venueRoutes);
 app.use('/api/citations', citationRoutes);
 app.use('/api/statistics', statisticsRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/visualization', visualizationRoutes);
 
 // 6. 健康检查端点
 app.get('/api/health', async (req, res) => {

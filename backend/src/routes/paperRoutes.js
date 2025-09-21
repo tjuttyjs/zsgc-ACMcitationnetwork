@@ -3,32 +3,72 @@ const router = express.Router();
 const neo4j = require('neo4j-driver');
 const driver = require('../utils/neo4j').driver;
 
-// 搜索论文
+// 搜索论文（增强筛选功能）
 router.get('/search', async (req, res) => {
-  const { q, page = 1, limit = 20 } = req.query;
+  const { q, page = 1, limit = 20, venue, yearFrom, yearTo, citationsMin } = req.query;
   const session = driver.session();
   
   try {
-    console.log(`执行搜索查询: ${q}`);
+    console.log(`执行搜索查询: ${q}, 筛选条件:`, { venue, yearFrom, yearTo, citationsMin });
     
-    // 确保参数是整数 - 使用 Neo4j 的整数类型
+    // 构建筛选条件
+    let whereConditions = [];
+    let params = { query: q };
+    
+    if (q) {
+      whereConditions.push('(p.title CONTAINS $query OR p.abstract CONTAINS $query)');
+    }
+    
+    if (venue) {
+      whereConditions.push('p.venue = $venue');
+      params.venue = venue;
+    }
+    
+    if (yearFrom && yearTo) {
+      whereConditions.push('p.year >= $yearFrom AND p.year <= $yearTo');
+      params.yearFrom = neo4j.int(parseInt(yearFrom));
+      params.yearTo = neo4j.int(parseInt(yearTo));
+    } else if (yearFrom) {
+      whereConditions.push('p.year >= $yearFrom');
+      params.yearFrom = neo4j.int(parseInt(yearFrom));
+    } else if (yearTo) {
+      whereConditions.push('p.year <= $yearTo');
+      params.yearTo = neo4j.int(parseInt(yearTo));
+    }
+    
+    if (citationsMin) {
+      whereConditions.push('p.n_citation >= $citationsMin');
+      params.citationsMin = neo4j.int(parseInt(citationsMin));
+    }
+    
+    const whereClause = whereConditions.length > 0 ? 
+      `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    // 分页参数
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.max(1, parseInt(limit) || 20);
     const skipNum = (pageNum - 1) * limitNum;
 
-    // 使用 Neo4j 的整数类型
     const result = await session.run(`
       MATCH (p:Paper)
-      WHERE p.title CONTAINS $query OR p.abstract CONTAINS $query
+      ${whereClause}
       RETURN p
+      ORDER BY p.n_citation DESC, p.year DESC
       SKIP $skip LIMIT $limit
     `, {
-      query: q,
-      skip: neo4j.int(skipNum),    // 使用 neo4j.int()
-      limit: neo4j.int(limitNum)   // 使用 neo4j.int()
+      ...params,
+      skip: neo4j.int(skipNum),
+      limit: neo4j.int(limitNum)
     });
 
-    console.log(`找到 ${result.records.length} 条结果`);
+    // 获取总数用于分页
+    const countResult = await session.run(`
+      MATCH (p:Paper)
+      ${whereClause}
+      RETURN count(p) as totalCount
+    `, params);
+
+    const totalCount = countResult.records[0]?.get('totalCount').low || 0;
     
     const papers = result.records.map(record => {
       const paper = record.get('p').properties;
@@ -47,7 +87,8 @@ router.get('/search', async (req, res) => {
       pagination: {
         page: pageNum,
         limit: limitNum,
-        total: papers.length
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitNum)
       }
     });
   } catch (error) {
@@ -56,6 +97,26 @@ router.get('/search', async (req, res) => {
       error: 'Search failed',
       message: error.message
     });
+  } finally {
+    await session.close();
+  }
+});
+
+// 获取所有会议/期刊列表用于筛选
+router.get('/venues', async (req, res) => {
+  const session = driver.session();
+  try {
+    const result = await session.run(`
+      MATCH (p:Paper)
+      WHERE p.venue IS NOT NULL
+      RETURN DISTINCT p.venue as venue
+      ORDER BY venue
+    `);
+    
+    const venues = result.records.map(record => record.get('venue'));
+    res.json(venues.filter(venue => venue)); // 过滤空值
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   } finally {
     await session.close();
   }
